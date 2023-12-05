@@ -1,0 +1,69 @@
+#include <xc.h>
+#include <string.h>
+
+#define _XTAL_FREQ 20000000  // Assuming a 20MHz crystal oscillator
+
+#define BUFFER_SIZE 100
+
+char data_buffer[BUFFER_SIZE];
+int buffer_index = 0;
+
+void USART_Init() {
+    // Configure USART for communication
+    TRISC6 = 0;  // TX pin is configured as output
+    TRISC7 = 1;  // RX pin is configured as input
+
+    TXSTAbits.SYNC = 0;  // Asynchronous mode
+    TXSTAbits.BRGH = 1;  // High-speed baud rate
+    BAUDCTLbits.BRG16 = 0;  // 8-bit baud rate generator
+
+    SPBRG = 25;  // Assuming a baud rate of 9600 (for 20MHz crystal)
+    
+    RCSTAbits.SPEN = 1;  // Enable serial port (TX and RX pins)
+    TXSTAbits.TXEN = 1;  // Enable transmission
+    RCSTAbits.CREN = 1;  // Enable continuous reception
+}
+
+void USART_SendChar(char c) {
+    while (!TXSTAbits.TRMT);  // Wait until the transmit buffer is empty
+    TXREG = c;  // Send character
+}
+
+char USART_ReceiveChar() {
+    while (!PIR1bits.RCIF);  // Wait until receive buffer is full
+    return RCREG;  // Read received character
+}
+
+int isJSON(const char *data) {
+    // Very basic check if the data starts with '{' and ends with '}'
+    return (data[0] == '{' && data[strlen(data) - 1] == '}');
+}
+
+void main() {
+    // Configure oscillator frequency
+    OSCCON = 0x70;  // Set to 8 MHz
+
+    USART_Init();
+
+    while (1) {
+        char received_char = USART_ReceiveChar();
+        
+        if (received_char == '\n') {
+            data_buffer[buffer_index] = '\0';  // Null-terminate the string
+            buffer_index = 0;
+
+            if (isJSON(data_buffer)) {
+                // Data is in JSON format, echo it and send to another microcontroller
+                USART_SendChar('[');  // Assume sending to another microcontroller
+                for (int i = 0; i < strlen(data_buffer); i++) {
+                    USART_SendChar(data_buffer[i]);
+                }
+                USART_SendChar(']');
+            }
+        } else {
+            if (buffer_index < BUFFER_SIZE - 1) {
+                data_buffer[buffer_index++] = received_char;
+            }
+        }
+    }
+}
